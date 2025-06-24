@@ -1,0 +1,20 @@
+﻿@{
+    ViewData["Title"] = "Đăng ký khuôn mặt";
+}
+
+<div class="container mt-4">
+    <h2 class="text-primary">Đăng ký khuôn mặt</h2>
+    <form method="post" enctype="multipart/form-data" asp-action="Upload">
+        <div class="mb-3">
+            <label class="form-label">Họ tên</label>
+            <input type="text" name="name" class="form-control" required />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Chọn ảnh khuôn mặt</label>
+            <input type="file" name="imageFile" accept="image/*" class="form-control" required />
+        </div>
+
+        <button type="submit" class="btn btn-primary">Đăng ký</button>
+    </form>
+</div>

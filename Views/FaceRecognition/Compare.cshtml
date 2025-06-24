@@ -1,0 +1,23 @@
+﻿@{
+    ViewData["Title"] = "So sánh khuôn mặt";
+}
+
+<div class="container mt-4">
+    <h2 class="text-info">So sánh khuôn mặt với ảnh đã đăng ký</h2>
+
+    <form method="post" enctype="multipart/form-data" asp-action="Compare">
+        <div class="mb-3">
+            <label class="form-label">Chọn ảnh khuôn mặt để so sánh</label>
+            <input type="file" name="testImage" accept="image/*" class="form-control" required />
+        </div>
+
+        <button type="submit" class="btn btn-primary">So sánh</button>
+    </form>
+
+    @if (ViewBag.Message != null)
+    {
+        <div class="alert mt-3 @(ViewBag.Success ? "alert-success" : "alert-danger")">
+            @ViewBag.Message
+        </div>
+    }
+</div>
