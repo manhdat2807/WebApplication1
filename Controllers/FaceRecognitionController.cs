@@ -1,52 +1,52 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using OpenCvSharp;
 using testti.Models;
+
 namespace testti.Controllers
 {
     public class FaceRecognitionController : Controller
     {
         private readonly ApplicationDbcontext _context;
         private readonly IWebHostEnvironment _env;
+
         public FaceRecognitionController(ApplicationDbcontext context, IWebHostEnvironment env)
         {
             _context = context;
             _env = env;
         }
+
         [HttpGet]
-        public async Task<IActionResult> Index()
-        {
-            return View();
-        }
+        public IActionResult Index() => View();
+
         [HttpPost]
         public async Task<IActionResult> Upload(IFormFile imageFile, string name)
         {
-            if (imageFile != null && imageFile.Length > 0)
+            if (imageFile == null || imageFile.Length == 0 || string.IsNullOrWhiteSpace(name))
             {
-                var fileName = Guid.NewGuid() + Path.GetExtension(imageFile.FileName);
-                var savePath = Path.Combine(_env.WebRootPath, "uploads", fileName);
-
-                using (var stream = new FileStream(savePath, FileMode.Create))
-                {
-                    await imageFile.CopyToAsync(stream);
-                }
-
-                var user = new Usercs
-                {
-                    Name = name,
-                    image = $"/uploads/{fileName}"
-                };
-
-                _context.users.Add(user);
-                await _context.SaveChangesAsync();
+                TempData["Error"] = "Vui lòng nhập tên và chọn ảnh!";
+                return RedirectToAction("Index");
             }
 
-            return RedirectToAction("Compare");// dùng cam thì chuyển Compare thành Capture
+            var uploadsPath = Path.Combine(_env.WebRootPath, "uploads");
+            Directory.CreateDirectory(uploadsPath);
+            var fileName = Guid.NewGuid() + Path.GetExtension(imageFile.FileName);
+            var fullPath = Path.Combine(uploadsPath, fileName);
+
+            using (var stream = new FileStream(fullPath, FileMode.Create))
+                await imageFile.CopyToAsync(stream);
+
+            _context.users.Add(new Usercs
+            {
+                Name = name,
+                image = "/uploads/" + fileName
+            });
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction("Capture");
         }
+
         [HttpGet]
-        public IActionResult Compare()
-        {
-            return View();
-        }
+        public IActionResult Compare() => View();
 
         [HttpPost]
         public async Task<IActionResult> Compare(IFormFile testImage)
@@ -58,23 +58,23 @@ namespace testti.Controllers
                 return View();
             }
 
-            // Lưu ảnh tạm
-            var fileName = Guid.NewGuid() + Path.GetExtension(testImage.FileName);
             var tempPath = Path.Combine(_env.WebRootPath, "temp");
-            if (!Directory.Exists(tempPath))
-                Directory.CreateDirectory(tempPath);
-            var testImagePath = Path.Combine(tempPath, fileName);
+            Directory.CreateDirectory(tempPath);
+            var fileName = Guid.NewGuid() + Path.GetExtension(testImage.FileName);
+            var fullPath = Path.Combine(tempPath, fileName);
 
-            using (var stream = new FileStream(testImagePath, FileMode.Create))
-            {
+            using (var stream = new FileStream(fullPath, FileMode.Create))
                 await testImage.CopyToAsync(stream);
+
+            var testMat = Cv2.ImRead(fullPath, ImreadModes.Grayscale);
+            if (testMat.Empty())
+            {
+                ViewBag.Message = "Không thể đọc ảnh kiểm tra.";
+                ViewBag.Success = false;
+                return View();
             }
+            Cv2.EqualizeHist(testMat, testMat);
 
-            // Đọc ảnh test
-            var testImg = Cv2.ImRead(testImagePath);
-            Cv2.CvtColor(testImg, testImg, ColorConversionCodes.BGR2GRAY);
-
-            // Load ảnh đã đăng ký (giả sử lấy user đầu tiên)
             var user = _context.users.FirstOrDefault();
             if (user == null)
             {
@@ -83,82 +83,115 @@ namespace testti.Controllers
                 return View();
             }
 
-            var registeredPath = Path.Combine(_env.WebRootPath, user.image.TrimStart('/').Replace("/", Path.DirectorySeparatorChar.ToString()));
-            var dbImg = Cv2.ImRead(registeredPath);
-            Cv2.CvtColor(dbImg, dbImg, ColorConversionCodes.BGR2GRAY);
+            var regPath = Path.Combine(_env.WebRootPath, "uploads", Path.GetFileName(user.image));
+            var regMat = Cv2.ImRead(regPath, ImreadModes.Grayscale);
+            if (regMat.Empty())
+            {
+                ViewBag.Message = "Không thể đọc ảnh đăng ký.";
+                ViewBag.Success = false;
+                return View();
+            }
+            Cv2.EqualizeHist(regMat, regMat);
 
             var recognizer = OpenCvSharp.Face.LBPHFaceRecognizer.Create();
-            recognizer.Train(new[] { dbImg }, new[] { 1 });
-
-            recognizer.Predict(testImg, out int label, out double confidence);
+            recognizer.Train(new[] { regMat }, new[] { 1 });
+            recognizer.Predict(testMat, out int label, out double confidence);
 
             if (label == 1 && confidence < 80)
             {
-                ViewBag.Message = $"Ảnh trùng khớp với người dùng: {user.Name} (Độ tin cậy: {confidence:0.00})";
+                ViewBag.Message = $"Khớp với: {user.Name} (Độ tin cậy: {confidence:0.00})";
                 ViewBag.Success = true;
             }
             else
             {
-                ViewBag.Message = $"Không khớp với người dùng đã đăng ký. (Độ tin cậy: {confidence:0.00})";
+                ViewBag.Message = $"Không khớp! (Độ tin cậy: {confidence:0.00})";
                 ViewBag.Success = false;
             }
 
             return View();
         }
-        //[HttpGet]
-        //public async Task<IActionResult> Capture()
-        //{
-        //    return View();
-        //}
-        //[HttpPost]
-        //public async Task<IActionResult> Recognize(FaceImageInput model)
-        //{
-        //    var capturedPath = Path.Combine(_env.WebRootPath, "temp", "captured.png");
-        //    var imageData = Convert.FromBase64String(model.Base64Image.Replace("data:image/png;base64,", ""));
-        //    System.IO.File.WriteAllBytes(capturedPath, imageData);
 
-        //    var capturedImg = Cv2.ImRead(capturedPath);
-        //    Cv2.CvtColor(capturedImg, capturedImg, ColorConversionCodes.BGR2GRAY);
+        [HttpGet]
+        public IActionResult Capture()
+        {
+            return View();
+        }
 
-        //    var users = _context.users.ToList();
+        [HttpPost]
+        public async Task<IActionResult> Recognize([FromBody] FaceImageInput model)
+        {
+            if (string.IsNullOrWhiteSpace(model?.Base64Image))
+                return BadRequest("Ảnh gửi lên rỗng.");
 
-        //    foreach (var user in users)
-        //    {
-        //        var fullPath = Path.Combine(_env.WebRootPath, user.image.TrimStart('/').Replace("/", Path.DirectorySeparatorChar.ToString()));
-        //        var dbImg = Cv2.ImRead(fullPath);
-        //        Cv2.CvtColor(dbImg, dbImg, ColorConversionCodes.BGR2GRAY);
+            try
+            {
+                var clean64 = model.Base64Image
+                    .Replace("data:image/png;base64,", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("data:image/jpeg;base64,", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace(" ", "+");
 
-        //        var recognizer = OpenCvSharp.Face.LBPHFaceRecognizer.Create();
-        //        recognizer.Train(new[] { dbImg }, new[] { 1 });
+                byte[] imageBytes = Convert.FromBase64String(clean64);
+                var captured = Cv2.ImDecode(imageBytes, ImreadModes.Grayscale);
+                if (captured.Empty())
+                    return BadRequest("Không thể đọc ảnh từ base64.");
 
-        //        int predictedLabel;
-        //        double confidence;
+                Cv2.EqualizeHist(captured, captured);
 
-        //        recognizer.Predict(capturedImg, out predictedLabel, out confidence);
+                var faces = new List<Mat>();
+                var labels = new List<int>();
 
-        //        if (predictedLabel == 1 && confidence < 80)
-        //        {
-        //            var attendance = new Attendance
-        //            {
-        //                UserId = user.Id,
-        //                time = DateTime.Now,
-        //                status = "Success"
-        //            };
+                foreach (var user in _context.users)
+                {
+                    var imagePath = Path.Combine(_env.WebRootPath, user.image.TrimStart('/').Replace("/", Path.DirectorySeparatorChar.ToString()));
+                    if (!System.IO.File.Exists(imagePath))
+                        continue;
 
-        //            _context.Attendances.Add(attendance);
-        //            await _context.SaveChangesAsync();
+                    var userImg = Cv2.ImRead(imagePath, ImreadModes.Grayscale);
+                    if (userImg.Empty()) continue;
 
-        //            return Json(new { success = true, message = $"Xin chào {user.Name}. Điểm danh thành công!" });
-        //        }
-        //    }
+                    Cv2.EqualizeHist(userImg, userImg);
 
-        //    return Json(new { success = false, message = "Không khớp khuôn mặt nào trong hệ thống!" });
-        //}
+                    faces.Add(userImg);
+                    labels.Add(user.Id);
+                }
+
+                if (faces.Count == 0)
+                    return BadRequest("Không có ảnh nào để nhận diện.");
+
+                var recognizer = OpenCvSharp.Face.LBPHFaceRecognizer.Create();
+                recognizer.Train(faces, labels);
+
+                recognizer.Predict(captured, out int predictedId, out double confidence);
+
+                var matchedUser = _context.users.FirstOrDefault(u => u.Id == predictedId);
+                if (matchedUser != null && confidence < 80)
+                {
+                    _context.Attendances.Add(new Attendance
+                    {
+                        UserId = matchedUser.Id,
+                        time = DateTime.UtcNow,
+                        status = "Success"
+                    });
+                    await _context.SaveChangesAsync();
+
+                    return Json(new
+                    {
+                        success = true,
+                        message = $"✅ Xin chào {matchedUser.Name}! Điểm danh thành công. (Độ tin cậy: {confidence:0.00})"
+                    });
+                }
+
+                return Json(new { success = false, message = "❌ Không khớp khuôn mặt nào." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Lỗi: {ex.Message}");
+            }
+        }
+
         public class FaceImageInput
         {
             public string Base64Image { get; set; } = string.Empty;
         }
-
-
     }
 }

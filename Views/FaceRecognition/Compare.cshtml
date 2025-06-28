@@ -1,23 +1,20 @@
 ﻿@{
-    ViewData["Title"] = "So sánh khuôn mặt";
+    ViewData["Title"] = "So sánh ảnh";
 }
 
-<div class="container mt-4">
-    <h2 class="text-info">So sánh khuôn mặt với ảnh đã đăng ký</h2>
+<h2>So sánh khuôn mặt</h2>
 
-    <form method="post" enctype="multipart/form-data" asp-action="Compare">
-        <div class="mb-3">
-            <label class="form-label">Chọn ảnh khuôn mặt để so sánh</label>
-            <input type="file" name="testImage" accept="image/*" class="form-control" required />
-        </div>
+<form method="post" enctype="multipart/form-data" asp-action="Compare">
+    <div class="mb-3">
+        <label for="testImage" class="form-label">Chọn ảnh để kiểm tra</label>
+        <input type="file" name="testImage" accept="image/*" class="form-control" required />
+    </div>
+    <button type="submit" class="btn btn-success">So sánh</button>
+</form>
 
-        <button type="submit" class="btn btn-primary">So sánh</button>
-    </form>
-
-    @if (ViewBag.Message != null)
-    {
-        <div class="alert mt-3 @(ViewBag.Success ? "alert-success" : "alert-danger")">
-            @ViewBag.Message
-        </div>
-    }
-</div>
+@if (ViewBag.Message != null)
+{
+    <div class="alert @(ViewBag.Success ? "alert-success" : "alert-danger") mt-3">
+        @ViewBag.Message
+    </div>
+}
